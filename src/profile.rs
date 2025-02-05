@@ -1,11 +1,11 @@
 use std::{
     fs::{self, File},
-    path::{Path, PathBuf}, str::FromStr,
+    path::{Path, PathBuf},
+    str::FromStr,
 };
 
-use anyhow::ensure;
 
-use crate::{command::run::profiles_dir, ModLoader};
+use crate::{dirs, version::GameVersion, ModLoader};
 
 #[derive(Debug)]
 pub struct Profile {
@@ -15,27 +15,32 @@ pub struct Profile {
     loader: Option<ModLoader>,
 }
 
+
 impl Profile {
 
-    pub fn create<S>(name: S) -> anyhow::Result<Self>
+    pub fn create<S>(name: S, version: GameVersion) -> anyhow::Result<Self>
     where
         S: Into<String>,
     {
         let name = name.into();
         let slug = normalize_name(&name);
 
-        if !profiles_dir().exists() {
-            fs::create_dir_all(profiles_dir())?;
+        let profiles_dir = dirs::profiles_dir();
+        if !profiles_dir.exists() {
+            fs::create_dir(&profiles_dir)?;
         }
-        let path = profiles_dir().join(&slug);
+        let path = profiles_dir.join(&slug);
 
-        ensure!(!path.exists(), "path is not empty");
-
-        fs::create_dir(&path)?;
-        let file = File::create_new(path.join("profile.json"))?;
+        if path.exists() && fs::read_dir(&path)?.next().is_some() {
+            return Err(ProfileError::AlreadyExists.into());
+        }
+        if !path.exists() {
+            fs::create_dir(&path)?;
+        }
 
         let mod_loader: Option<ModLoader> = None;
 
+        let file = File::create(path.join("profile.json"))?;
         serde_json::to_writer_pretty(
             file,
             &serde_json::json!({
@@ -86,9 +91,7 @@ impl Profile {
     pub fn loader(&self) -> &Option<ModLoader> {
         &self.loader
     }
-
 }
-
 
 pub fn normalize_name(name: &String) -> String {
     name.to_lowercase()
@@ -96,7 +99,6 @@ pub fn normalize_name(name: &String) -> String {
         .collect::<Vec<&str>>()
         .join("-")
 }
-
 
 pub fn load_profiles(path: &Path) -> anyhow::Result<Vec<Profile>> {
     let mut profiles = Vec::new();
@@ -106,4 +108,15 @@ pub fn load_profiles(path: &Path) -> anyhow::Result<Vec<Profile>> {
     }
 
     Ok(profiles)
+}
+
+
+
+
+
+
+#[derive(thiserror::Error, Debug)]
+pub enum ProfileError {
+    #[error("Profile already exists")]
+    AlreadyExists,
 }

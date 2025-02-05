@@ -4,24 +4,37 @@ use clap::{arg, Arg, Command};
 
 mod command;
 
+mod dirs;
 mod profile;
 mod version;
 
 fn main() {
+    let env = env_logger::Env::default().filter_or("RUST_LOG", "info");
+
+    env_logger::init_from_env(env);
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async { async_main().await })
+}
+
+async fn async_main() {
     #[rustfmt::skip]
     let matches = Command::new("launcher")
         .subcommands([
             Command::new("new")
                 .about("Create a new profile")
                 .args(&[
-                    Arg::new("name").short('N').long("name")
+                    Arg::new("name").short('n').long("name")
                         .num_args(1),
-                    Arg::new("version").short('V').long("version")
+                    Arg::new("version").short('v').long("version")
                         .required(true)
                         .num_args(1),
-                    Arg::new("loader").short('L').long("loader")
+                    Arg::new("loader").short('l').long("loader")
                         .num_args(1),
-                    arg!(-R --replace "debug: deletes the profile if it already exists and creates a new one").num_args(0)
+                    arg!(-r --replace "debug: deletes the profile if it already exists and creates a new one").num_args(0)
                 ]),
             Command::new("run")
                 .alias("r")
@@ -38,7 +51,7 @@ fn main() {
 
     match matches.subcommand() {
         Some(("new", new_matches)) => {
-            command::new::execute(&new_matches);
+            command::new::execute(&new_matches).await;
         }
         Some(("run", run_matches)) => {
             command::run::execute(&run_matches);
@@ -46,17 +59,6 @@ fn main() {
         _ => unreachable!(),
     }
 }
-
-fn root_dir() -> PathBuf {
-    let home = dirs::data_dir().unwrap();
-
-    let data_dir = home.join("launcher");
-    fs::create_dir_all(&data_dir).unwrap();
-
-    data_dir
-}
-
-
 
 #[derive(Debug, Clone)]
 pub enum ModLoader {
@@ -70,7 +72,7 @@ impl FromStr for ModLoader {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_lowercase().as_str() {
             "fabric" => Ok(ModLoader::Fabric),
             "quilt" => Ok(ModLoader::Quilt),
             "forge" => Ok(ModLoader::Forge),
